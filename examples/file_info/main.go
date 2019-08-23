@@ -6,7 +6,6 @@ import (
 	"os"
 
 	"github.com/bi-zone/go-fileversion"
-	"github.com/davecgh/go-spew/spew"
 )
 
 func main() {
@@ -30,5 +29,14 @@ func main() {
 	fmt.Println("PrivateBuild:", f.PrivateBuild())
 	fmt.Println("SpecialBuild:", f.SpecialBuild())
 
-	spew.Dump(f.FixedFileInfo)
+	fmt.Printf("\n%+#v\n", f.GetFixedInfo())
+
+	fmt.Printf("%+#v\n", f.Locales)
+
+	germanLocale := fileversion.Locale{
+		LangID:    0x0407,
+		CharsetID: fileversion.CSUnicode,
+	}
+	fmt.Println(f.GetPropertyWithLocale("PropertyName", germanLocale))
+
 }

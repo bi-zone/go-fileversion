@@ -5,19 +5,21 @@ import (
 	"syscall"
 	"unsafe"
 
+	"github.com/hashicorp/go-multierror"
 	"golang.org/x/xerrors"
 )
 
+type FileVersion struct {
+	Major uint16
+	Minor uint16
+	Patch uint16
+	Build uint16
+}
+
 // FixedFileInfo contains info from VS_FIXEDFILEINFO windows structure.
 type FixedFileInfo struct {
-	FileMajor      uint16
-	FileMinor      uint16
-	FileBuild      uint16
-	FilePrivate    uint16
-	ProductMajor   uint16
-	ProductMinor   uint16
-	ProductBuild   uint16
-	ProductPrivate uint16
+	FileVersion
+	ProductVersion FileVersion
 	FileFlagsMask  uint32
 	FileFlags      uint32
 	FileOs         uint32
@@ -27,18 +29,33 @@ type FixedFileInfo struct {
 	FileDateLS     uint32
 }
 
-type Locale string
+type LangID uint16
+type CharsetID uint16
 
-var EnglishUSAscii = Locale("040904E4") // US English + CP_USASCII
-var EnglishUnicode = Locale("040904B0") // US English + CP_UNICODE
-var EnglishUnknown = Locale("04090000") // US English + unknown codepage
+// Locale defines a pair of a language ID and a charsetID.
+// It can be either one of default locales or any of locales
+// get from the file information using `.Locales()` method
+type Locale struct {
+	LangID
+	CharsetID
+}
+
+// LangID and CharsetID constants.
+// More combinations you can find in windows docs or
+// https://godoc.org/github.com/josephspurrier/goversioninfo#pkg-constants
+const (
+	LangEnglish = LangID(0x049)
+
+	CSAscii   = CharsetID(0x04e4)
+	CSUnicode = CharsetID(0x04B0)
+	CSUnknown = CharsetID(0x0000)
+)
 
 // Info contains windows object, which is being used
 // for getting file version properties.
 type Info struct {
-	data          []byte
-	FixedFileInfo FixedFileInfo
-	pageID        Locale
+	data    []byte
+	Locales []Locale
 }
 
 var (
@@ -50,62 +67,74 @@ var (
 
 // CompanyName returns CompanyName property.
 func (f Info) CompanyName() string {
-	return f.GetProperty("CompanyName")
+	p, _ := f.GetProperty("CompanyName")
+	return p
 }
 
 // FileDescription returns FileDescription property.
 func (f Info) FileDescription() string {
-	return f.GetProperty("FileDescription")
+	p, _ := f.GetProperty("FileDescription")
+	return p
 }
 
 // FileVersion returns FileVersion property.
 func (f Info) FileVersion() string {
-	return f.GetProperty("FileVersion")
+	p, _ := f.GetProperty("FileVersion")
+	return p
 }
 
 // InternalName returns InternalName property.
 func (f Info) InternalName() string {
-	return f.GetProperty("InternalName")
+	p, _ := f.GetProperty("InternalName")
+	return p
 }
 
 // LegalCopyright returns LegalCopyright property.
 func (f Info) LegalCopyright() string {
-	return f.GetProperty("LegalCopyright")
+	p, _ := f.GetProperty("LegalCopyright")
+	return p
 }
 
 // OriginalFilename returns OriginalFilename property.
 func (f Info) OriginalFilename() string {
-	return f.GetProperty("OriginalFilename")
+	p, _ := f.GetProperty("OriginalFilename")
+	return p
 }
 
 // ProductName returns ProductName property.
 func (f Info) ProductName() string {
-	return f.GetProperty("ProductName")
+	p, _ := f.GetProperty("ProductName")
+	return p
 }
 
 // ProductVersion returns ProductVersion property.
 func (f Info) ProductVersion() string {
-	return f.GetProperty("ProductVersion")
+	p, _ := f.GetProperty("ProductVersion")
+	return p
 }
 
 // Comments returns Comments property.
 func (f Info) Comments() string {
-	return f.GetProperty("Comments")
+	p, _ := f.GetProperty("Comments")
+	return p
 }
 
 // FileVeLegalTrademarksrsion returns FileVeLegalTrademarksrsion property.
 func (f Info) FileVeLegalTrademarksrsion() string {
-	return f.GetProperty("LegalTrademarks")
+	p, _ := f.GetProperty("LegalTrademarks")
+	return p
 }
 
 // PrivateBuild returns PrivateBuild property.
 func (f Info) PrivateBuild() string {
-	return f.GetProperty("PrivateBuild")
+	p, _ := f.GetProperty("PrivateBuild")
+	return p
 }
 
 // SpecialBuild returns SpecialBuild property.
 func (f Info) SpecialBuild() string {
-	return f.GetProperty("SpecialBuild")
+	p, _ := f.GetProperty("SpecialBuild")
+	return p
 }
 
 // New creates Info instance with default locale.
@@ -115,20 +144,11 @@ func New(path string) (Info, error) {
 		return Info{}, xerrors.Errorf("failed to get VersionInfo; %s", err)
 	}
 
-	pageID := info.GetPageID()
-	info.pageID = pageID
-
-	return info, nil
-}
-
-// NewWithLocale creates Info instance with user-defined locale.
-func NewWithLocale(path string, pageID Locale) (Info, error) {
-	info, err := newWithoutLocale(path)
+	locales, err := info.getLocales()
 	if err != nil {
-		return Info{}, xerrors.Errorf("failed to get VersionInfo; %s", err)
+		return Info{}, xerrors.Errorf("failed to get locales; %s", err)
 	}
-
-	info.pageID = pageID
+	info.Locales = locales
 
 	return info, nil
 }
@@ -157,38 +177,25 @@ func newWithoutLocale(path string) (Info, error) {
 	}
 
 	vi := Info{data: info}
-
-	fixedInfo := vi.GetFixedInfo()
-	vi.FixedFileInfo = fixedInfo
-
 	return vi, nil
 }
 
-// GetPageID gets pageID filed in structure.
-// It tries to get pageID from VersionInfo data.
-// If getting ends with fail, it returns default pageID
-// 040904E4 // US English + CP_USASCII.
-func (f Info) GetPageID() Locale {
+// getLocales tries to get `Translation` property from VersionInfo data.
+func (f Info) getLocales() ([]Locale, error) {
 	data, err := f.verQueryValue(`\VarFileInfo\Translation`, false)
 	if err != nil || len(data) == 0 {
-		return EnglishUSAscii
+		return nil, xerrors.Errorf("failed to get Translation property from windows object; %s", err)
 	}
 
-	// each pageID consists of a 16-bit language ID and a 16-bit code page
-	type langAndCodePage struct {
-		Language uint16
-		CodePage uint16
+	if len(data)%int(unsafe.Sizeof(Locale{})) != 0 {
+		return nil, xerrors.New("get wrong locales len from windows object")
 	}
-	if len(data)%int(unsafe.Sizeof(langAndCodePage{})) != 0 {
-		return EnglishUSAscii
-	}
-	n := len(data) / int(unsafe.Sizeof(langAndCodePage{}))
+	n := len(data) / int(unsafe.Sizeof(Locale{}))
 	if n == 0 {
-		return EnglishUSAscii
+		return nil, xerrors.New("get empty locales array from windows object")
 	}
-
-	ids := (*[1 << 28]langAndCodePage)(unsafe.Pointer(&data[0]))[:n:n]
-	return Locale(fmt.Sprintf("%04x%04x", ids[0].Language, ids[0].CodePage))
+	locales := (*[1 << 28]Locale)(unsafe.Pointer(&data[0]))[:n:n]
+	return locales, nil
 }
 
 // GetFixedInfo returns FixedFileInfo structure, which constructs from windows
@@ -219,53 +226,89 @@ func (f Info) GetFixedInfo() FixedFileInfo {
 	}
 	vsFixedInfo := *((*rawFixedFileInfo)(unsafe.Pointer(&data[0])))
 	return FixedFileInfo{
-		FileMajor:      uint16(vsFixedInfo.FileVersionMS >> 16),
-		FileMinor:      uint16(vsFixedInfo.FileVersionMS & 0xffff),
-		FileBuild:      uint16(vsFixedInfo.FileVersionLS >> 16),
-		FilePrivate:    uint16(vsFixedInfo.FileVersionLS & 0xffff),
-		ProductMajor:   uint16(vsFixedInfo.ProductVersionMS >> 16),
-		ProductMinor:   uint16(vsFixedInfo.ProductVersionMS & 0xffff),
-		ProductBuild:   uint16(vsFixedInfo.ProductVersionLS >> 16),
-		ProductPrivate: uint16(vsFixedInfo.ProductVersionLS & 0xffff),
-		FileFlagsMask:  vsFixedInfo.FileFlagsMask,
-		FileFlags:      vsFixedInfo.FileFlags,
-		FileOs:         vsFixedInfo.FileOS,
-		FileType:       vsFixedInfo.FileType,
-		FileSubType:    vsFixedInfo.FileSubtype,
-		FileDateMS:     vsFixedInfo.FileDateMS,
-		FileDateLS:     vsFixedInfo.FileDateLS,
+		FileVersion: FileVersion{
+			Major: uint16(vsFixedInfo.FileVersionMS >> 16),
+			Minor: uint16(vsFixedInfo.FileVersionMS & 0xffff),
+			Patch: uint16(vsFixedInfo.FileVersionLS & 0xffff),
+			Build: uint16(vsFixedInfo.FileVersionLS >> 16),
+		},
+		ProductVersion: FileVersion{
+			Major: uint16(vsFixedInfo.ProductVersionMS >> 16),
+			Minor: uint16(vsFixedInfo.ProductVersionMS & 0xffff),
+			Patch: uint16(vsFixedInfo.ProductVersionLS & 0xffff),
+			Build: uint16(vsFixedInfo.ProductVersionLS >> 16),
+		},
+		FileFlagsMask: vsFixedInfo.FileFlagsMask,
+		FileFlags:     vsFixedInfo.FileFlags,
+		FileOs:        vsFixedInfo.FileOS,
+		FileType:      vsFixedInfo.FileType,
+		FileSubType:   vsFixedInfo.FileSubtype,
+		FileDateMS:    vsFixedInfo.FileDateMS,
+		FileDateLS:    vsFixedInfo.FileDateLS,
 	}
 }
 
+var defaultLocales = []Locale{
+	{
+		LangID:    LangEnglish,
+		CharsetID: CSAscii,
+	},
+	{
+		LangID:    LangEnglish,
+		CharsetID: CSUnicode,
+	},
+	{
+		LangID:    LangEnglish,
+		CharsetID: CSUnknown,
+	},
+}
+
 // GetProperty returns string-property.
-func (f Info) GetProperty(propertyName string) (property string) {
-	property, err := f.verQueryValueString(f.pageID, propertyName)
-	if err == nil {
-		return
+func (f Info) GetProperty(propertyName string) (string, error) {
+	var resErr error
+	if len(f.Locales) != 0 {
+		property, err := f.GetPropertyWithLocale(propertyName, f.Locales[0])
+		if err == nil {
+			return property, nil
+		}
+		resErr = multierror.Append(resErr, err)
 	}
 	// Some dlls might not contain correct codepage information. In this case we will fail during lookup.
 	// Explorer will take a few shots in dark by trying `defaultPageIDs`.
 	// Explorer also randomly guess 041D04B0=Swedish+CP_UNICODE and 040704B0=German+CP_UNICODE) sometimes.
 	// We will try to simulate similiar behavior here.
-	for _, id := range []Locale{EnglishUSAscii, EnglishUnicode, EnglishUnknown} {
-		if id == f.pageID {
+	for _, id := range defaultLocales {
+		if len(f.Locales) != 0 && id == f.Locales[0] {
 			continue
 		}
-		property, err = f.verQueryValueString(id, propertyName)
+		property, err := f.GetPropertyWithLocale(propertyName, id)
 		if err == nil {
-			return
+			return property, nil
 		}
+		resErr = multierror.Append(resErr, err)
 	}
-	return
+	return "", resErr
 }
 
+// GetProperty returns string-property with user-defined locale.
+func (f Info) GetPropertyWithLocale(propertyName string, locale Locale) (string, error) {
+	property, err := f.verQueryValueString(locale, propertyName)
+	if err != nil {
+		return "", xerrors.Errorf("failed to get property %q with locale %s", propertyName, locale)
+	}
+	return property, nil
+}
+
+var uint16Size = int(unsafe.Sizeof(uint16(0)))
+
 // verQueryValueString returns property with type UTF16.
-func (f Info) verQueryValueString(pageID Locale, property string) (string, error) {
-	data, err := f.verQueryValue(`\StringFileInfo\`+string(pageID)+`\`+property, true)
+func (f Info) verQueryValueString(locale Locale, property string) (string, error) {
+	localeStr := fmt.Sprintf("%04x%04x", locale.LangID, locale.CharsetID)
+	data, err := f.verQueryValue(`\StringFileInfo\`+localeStr+`\`+property, true)
 	if err != nil || len(data) == 0 {
 		return "", err
 	}
-	n := len(data) / 2
+	n := len(data) / uint16Size
 	u16 := (*[1 << 28]uint16)(unsafe.Pointer(&data[0]))[:n:n]
 	return syscall.UTF16ToString(u16), err
 }
@@ -295,7 +338,7 @@ func (f Info) verQueryValue(property string, isUTF16String bool) ([]byte, error)
 	start := int(offset) - int(blockStart)
 	var end int
 	if isUTF16String {
-		end = start + int(2*length) // length represents in characters count in string
+		end = start + uint16Size*int(length) // length represents in characters count in string
 	} else {
 		end = start + int(length)
 	}

@@ -3,9 +3,9 @@
 
 Package `fileversion` provides wrapper for windows version-information resource.
 
-Package extracts this information from file:
+Using the package you can extract the following info:
 
-![](https://github.com/bi-zone/go-fileversion/blob/version_info_fillinf/explorer_properties.png)
+![](https://github.com/bi-zone/go-fileversion/blob/version_info_fillinf/assets/explorer_properties.png)
 
 
 
@@ -21,7 +21,6 @@ import (
 	"os"
 
 	"github.com/bi-zone/go-fileversion"
-	"github.com/davecgh/go-spew/spew"
 )
 
 func main() {
@@ -45,26 +44,50 @@ func main() {
 	fmt.Println("PrivateBuild:", f.PrivateBuild())
 	fmt.Println("SpecialBuild:", f.SpecialBuild())
 
-	spew.Dump(f.FixedFileInfo)
+	fmt.Printf("\n%+#v\n", f.GetFixedInfo())
+
+	fmt.Printf("%+#v\n", f.Locales)
 }
 ```
 
-You can create version info object with own-defined locale
+You can choose the locale for getting property.
+
+Choose locale from object:
 
 ```golang
-f, err := fileversion.New(os.Args[1], fileversion.EnglishUnicode)
-	if err != nil {
-		log.Fatal(err)
-	}
+f, err := fileversion.New(os.Args[1])
+if err != nil {
+    log.Fatal(err)
+}
+if len(f.Locales) > 1 {
+    fmt.Println(f.GetPropertyWithLocale("PropertyName", f.Locales[len(f.Locales) - 1]))
+}
 ```
 
-You can combine a locale with another language and another charset. Read the [docs](https://docs.microsoft.com/en-us/windows/win32/menurc/versioninfo-resource).
+Also you can get property with owen-defined locale:
 ```golang
-f, err := fileversion.New(os.Args[1], "041904b0") // Russian + Unicode
-	if err != nil {
-		log.Fatal(err)
+f, err := fileversion.New(os.Args[1])
+if err != nil {
+    log.Fatal(err)
+}
+germanLocale := fileversion.Locale{
+		LangID: 0x0407,
+		CharsetID: fileversion.CSUnicode,
 	}
+fmt.Println(f.GetPropertyWithLocale("PropertyName", germanLocale))
 ```
+But we don't recommend to do this :) If object doesn't have locale, 
+you will get an error.
 
-## Notes
-The idea of locales handling was copied from [.NET Framework 4.8](https://referencesource.microsoft.com/#System/services/monitoring/system/diagnosticts/FileVersionInfo.cs,036c54a4aa10d39f,references)
+ `f.GetProperty` method tries to get property with different locales given 
+ windows features.
+The idea of locales handling was copied from 
+[.NET Framework 4.8](https://referencesource.microsoft.com/#System/services/monitoring/system/diagnosticts/FileVersionInfo.cs,036c54a4aa10d39f,references)
+
+```golang
+f, err := fileversion.New(os.Args[1])
+if err != nil {
+    log.Fatal(err)
+}
+f.GetProperty("PropertyName")
+```
