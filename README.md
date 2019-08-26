@@ -1,11 +1,12 @@
 ﻿# go-fileversion
 
+[![GoDoc](https://godoc.org/github.com/bi-zone/go-fileversion?status.svg)](https://godoc.org/github.com/bi-zone/go-fileversion/)
 
 Package `fileversion` provides wrapper for windows version-information resource.
 
 Using the package you can extract the following info:
 
-![](https://github.com/bi-zone/go-fileversion/blob/version_info_fillinf/assets/explorer_properties.png)
+![](https://github.com/bi-zone/go-fileversion/assets/explorer_properties.png)
 
 
 
@@ -44,7 +45,7 @@ func main() {
 	fmt.Println("PrivateBuild:", f.PrivateBuild())
 	fmt.Println("SpecialBuild:", f.SpecialBuild())
 
-	fmt.Printf("\n%+#v\n", f.GetFixedInfo())
+	fmt.Printf("\n%+#v\n", f.FixedInfo())
 
 	fmt.Printf("%+#v\n", f.Locales)
 }

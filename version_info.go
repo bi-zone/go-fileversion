@@ -248,7 +248,7 @@ func (f Info) FixedInfo() FixedFileInfo {
 // translation: it returns a first existing translation for any of .Locales
 // and if failed tries to query it for locales from fileversion.DefaultLocales.
 func (f Info) GetProperty(propertyName string) (string, error) {
-	for _, id := range DefaultLocales {
+	for _, id := range f.Locales {
 		property, err := f.GetPropertyWithLocale(propertyName, id)
 		if err == nil {
 			return property, nil
