@@ -8,7 +8,7 @@ import (
 	"golang.org/x/xerrors"
 )
 
-// FileVersion consists info about version.
+// FileVersion is a multi-component version.
 type FileVersion struct {
 	Major uint16
 	Minor uint16
@@ -21,9 +21,12 @@ func (f FileVersion) String() string {
 	return fmt.Sprintf("%d.%d.%d.%d", f.Major, f.Minor, f.Patch, f.Build)
 }
 
-// FixedFileInfo contains info from VS_FIXEDFILEINFO windows structure.
+// FixedFileInfo contains a "fixed" part of a file information (without any strings).
+//
+// Ref VS_FIXEDFILEINFO:
+// https://docs.microsoft.com/en-us/windows/win32/api/verrsrc/ns-verrsrc-vs_fixedfileinfo
 type FixedFileInfo struct {
-	FileVersion
+	FileVersion    FileVersion
 	ProductVersion FileVersion
 	FileFlagsMask  uint32
 	FileFlags      uint32
@@ -34,24 +37,26 @@ type FixedFileInfo struct {
 	FileDateLS     uint32
 }
 
-// LangID is a language id, should set considering
+// LangID is a Windows language identifier. Could be one of the codes listed in
+// `langID` section of
 // https://docs.microsoft.com/en-us/windows/win32/menurc/versioninfo-resource
 type LangID uint16
 
-// CharsetId is character-set identifier, should set considering
+// CharsetId is character-set identifier. Could be one of the codes listed in
+// `charsetID` section of
 // https://docs.microsoft.com/en-us/windows/win32/menurc/versioninfo-resource
 type CharsetID uint16
 
-// Locale defines a pair of a language ID and a charsetID.
-// It can be either one of default locales or any of locales
-// get from the file information using `.Locales()` method
+// Locale defines a pair of a language ID and a charsetID. It can be either any
+// combination of predefined LangID and CharsetID or crafted manually suing
+// values from https://docs.microsoft.com/en-us/windows/win32/menurc/versioninfo-resource
 type Locale struct {
 	LangID    LangID
 	CharsetID CharsetID
 }
 
-// LangID and CharsetID constants.
-// More combinations you can find in windows docs or
+// The package defines a list of most commonly used LangID and CharsetID
+// constant. More combinations you can find in windows docs or at
 // https://godoc.org/github.com/josephspurrier/goversioninfo#pkg-constants
 const (
 	LangEnglish = LangID(0x049)
@@ -61,19 +66,58 @@ const (
 	CSUnknown = CharsetID(0x0000)
 )
 
-// Info contains windows object, which is being used
-// for getting file version properties.
-type Info struct {
-	data    []byte
-	Locales []Locale
+// DefaultLocales is a list of default Locale values. It's used as a fallback
+// in a calls with automatic locales detection.
+//
+//nolint:gochecknoglobals
+var DefaultLocales = []Locale{
+	{
+		LangID:    LangEnglish,
+		CharsetID: CSAscii,
+	},
+	{
+		LangID:    LangEnglish,
+		CharsetID: CSUnicode,
+	},
+	{
+		LangID:    LangEnglish,
+		CharsetID: CSUnknown,
+	},
 }
 
-var (
-	version                    = syscall.NewLazyDLL("version.dll")
-	getFileVersionInfoSizeProc = version.NewProc("GetFileVersionInfoSizeW")
-	getFileVersionInfoProc     = version.NewProc("GetFileVersionInfoW")
-	verQueryValueProc          = version.NewProc("VerQueryValueW")
-)
+// Info contains a transparent windows object, which is being used for getting
+// file version resource properties.
+//
+// Locales is a list of locales defined for the object. For the Info created
+// using New it's queried from `\VarFileInfo\Translation`, for ones created
+// using NewWithLocale it's just the given locale.
+//
+// A translation for the any property value is automatically chosen from Locales
+// and then from fileversion.DefaultLocales prior to to the list order. Use
+// GetPropertyWithLocale for deterministic selection of the property translation.
+type Info struct {
+	Locales []Locale
+	data    []byte
+}
+
+// New creates an Info instance.
+//
+// It queries a list of translations from the version-information resource and
+// uses them as preferred translations for string properties.
+func New(path string) (Info, error) {
+	info, err := newWithoutLocale(path)
+	if err != nil {
+		return Info{}, xerrors.Errorf("failed to get VersionInfo; %s", err)
+	}
+
+	if locales, err := info.getLocales(); err == nil {
+		info.Locales = locales
+	} else {
+		info.Locales = DefaultLocales
+	}
+
+	return info, nil
+}
 
 // CompanyName returns CompanyName property.
 func (f Info) CompanyName() string {
@@ -129,8 +173,8 @@ func (f Info) Comments() string {
 	return p
 }
 
-// FileVeLegalTrademarksrsion returns FileVeLegalTrademarksrsion property.
-func (f Info) FileVeLegalTrademarksrsion() string {
+// LegalTrademarks returns LegalTrademarks property.
+func (f Info) LegalTrademarks() string {
 	p, _ := f.GetProperty("LegalTrademarks")
 	return p
 }
@@ -147,72 +191,11 @@ func (f Info) SpecialBuild() string {
 	return p
 }
 
-// New creates Info instance with default locale.
-func New(path string) (Info, error) {
-	info, err := newWithoutLocale(path)
-	if err != nil {
-		return Info{}, xerrors.Errorf("failed to get VersionInfo; %s", err)
-	}
-
-	locales, err := info.getLocales()
-	if err != nil {
-		return Info{}, xerrors.Errorf("failed to get locales; %s", err)
-	}
-	info.Locales = locales
-
-	return info, nil
-}
-
-func newWithoutLocale(path string) (Info, error) {
-	pathPtr, err := syscall.UTF16PtrFromString(path)
-	if err != nil {
-		return Info{}, xerrors.Errorf("failed to convert image path to utf16; %s", err)
-	}
-	size, _, err := getFileVersionInfoSizeProc.Call(
-		uintptr(unsafe.Pointer(pathPtr)),
-		0,
-	)
-	if size == 0 {
-		return Info{}, xerrors.Errorf("failed to get memory size for VersionInfo slice; %s", err)
-	}
-	info := make([]byte, size)
-	ret, _, err := getFileVersionInfoProc.Call(
-		uintptr(unsafe.Pointer(pathPtr)),
-		0,
-		uintptr(len(info)),
-		uintptr(unsafe.Pointer(&info[0])),
-	)
-	if ret == 0 {
-		return Info{}, xerrors.Errorf("failed to get VersionInfo from windows; %s", err)
-	}
-
-	vi := Info{data: info}
-	return vi, nil
-}
-
-// getLocales tries to get `Translation` property from VersionInfo data.
-func (f Info) getLocales() ([]Locale, error) {
-	data, err := f.verQueryValue(`\VarFileInfo\Translation`, false)
-	if err != nil || len(data) == 0 {
-		return nil, xerrors.Errorf("failed to get Translation property from windows object; %s", err)
-	}
-
-	if len(data)%int(unsafe.Sizeof(Locale{})) != 0 {
-		return nil, xerrors.New("get wrong locales len from windows object")
-	}
-	n := len(data) / int(unsafe.Sizeof(Locale{}))
-	if n == 0 {
-		return nil, xerrors.New("get empty locales array from windows object")
-	}
-	locales := (*[1 << 28]Locale)(unsafe.Pointer(&data[0]))[:n:n]
-	return locales, nil
-}
-
-// GetFixedInfo returns FixedFileInfo structure, which constructs from windows
-// VS_FIXEDFILEINFO structure.
-// source:
-// https://helloacm.com/c-function-to-get-file-version-using-win32-api-ansi-and-unicode-version/
-func (f Info) GetFixedInfo() FixedFileInfo {
+// FixedInfo returns a fixed (non-string) part of the file version-information
+// resource. Contains file and product versions.
+//
+// Ref: https://helloacm.com/c-function-to-get-file-version-using-win32-api-ansi-and-unicode-version/
+func (f Info) FixedInfo() FixedFileInfo {
 	data, err := f.verQueryValue(`\`, false)
 	if err != nil {
 		return FixedFileInfo{}
@@ -258,25 +241,15 @@ func (f Info) GetFixedInfo() FixedFileInfo {
 	}
 }
 
-var defaultLocales = []Locale{
-	{
-		LangID:    LangEnglish,
-		CharsetID: CSAscii,
-	},
-	{
-		LangID:    LangEnglish,
-		CharsetID: CSUnicode,
-	},
-	{
-		LangID:    LangEnglish,
-		CharsetID: CSUnknown,
-	},
-}
-
-// GetProperty returns string-property.
+// GetProperty queries a string-property from version-information resource.
+//
+// Single property in a version-information resource can have multiple
+// translations. GetProperty does its best trying to find an existing
+// translation: it returns a first existing translation for any of .Locales
+// and if failed tries to query it for locales from fileversion.DefaultLocales.
 func (f Info) GetProperty(propertyName string) (string, error) {
-	if len(f.Locales) != 0 {
-		property, err := f.GetPropertyWithLocale(propertyName, f.Locales[0])
+	for _, id := range DefaultLocales {
+		property, err := f.GetPropertyWithLocale(propertyName, id)
 		if err == nil {
 			return property, nil
 		}
@@ -284,11 +257,8 @@ func (f Info) GetProperty(propertyName string) (string, error) {
 	// Some dlls might not contain correct codepage information. In this case we will fail during lookup.
 	// Explorer will take a few shots in dark by trying `defaultPageIDs`.
 	// Explorer also randomly guess 041D04B0=Swedish+CP_UNICODE and 040704B0=German+CP_UNICODE) sometimes.
-	// We will try to simulate similiar behavior here.
-	for _, id := range defaultLocales {
-		if len(f.Locales) != 0 && id == f.Locales[0] {
-			continue
-		}
+	// We will try to simulate similar behavior here.
+	for _, id := range DefaultLocales {
 		property, err := f.GetPropertyWithLocale(propertyName, id)
 		if err == nil {
 			return property, nil
@@ -297,7 +267,11 @@ func (f Info) GetProperty(propertyName string) (string, error) {
 	return "", xerrors.Errorf("failed to get property %q", propertyName)
 }
 
-// GetProperty returns string-property with user-defined locale.
+// GetProperty returns string-property with user-defined locale. It's the only
+// way to get the property with the selected translation, all other methods
+// do heuristics in translation choosing.
+//
+// See Locale, LangID and CharsetID docs for more info about locales.
 func (f Info) GetPropertyWithLocale(propertyName string, locale Locale) (string, error) {
 	property, err := f.verQueryValueString(locale, propertyName)
 	if err != nil {
@@ -306,7 +280,16 @@ func (f Info) GetPropertyWithLocale(propertyName string, locale Locale) (string,
 	return property, nil
 }
 
+//nolint:gochecknoglobals
 var uint16Size = int(unsafe.Sizeof(uint16(0)))
+
+//nolint:gochecknoglobals
+var (
+	version                    = syscall.NewLazyDLL("version.dll")
+	getFileVersionInfoSizeProc = version.NewProc("GetFileVersionInfoSizeW")
+	getFileVersionInfoProc     = version.NewProc("GetFileVersionInfoW")
+	verQueryValueProc          = version.NewProc("VerQueryValueW")
+)
 
 // verQueryValueString returns property with type UTF16.
 func (f Info) verQueryValueString(locale Locale, property string) (string, error) {
@@ -353,4 +336,49 @@ func (f Info) verQueryValue(property string, isUTF16String bool) ([]byte, error)
 		return nil, xerrors.New("Index out of array")
 	}
 	return f.data[start:end], nil
+}
+
+func newWithoutLocale(path string) (Info, error) {
+	pathPtr, err := syscall.UTF16PtrFromString(path)
+	if err != nil {
+		return Info{}, xerrors.Errorf("failed to convert image path to utf16; %s", err)
+	}
+	size, _, err := getFileVersionInfoSizeProc.Call(
+		uintptr(unsafe.Pointer(pathPtr)),
+		0,
+	)
+	if size == 0 {
+		return Info{}, xerrors.Errorf("failed to get memory size for VersionInfo slice; %s", err)
+	}
+	info := make([]byte, size)
+	ret, _, err := getFileVersionInfoProc.Call(
+		uintptr(unsafe.Pointer(pathPtr)),
+		0,
+		uintptr(len(info)),
+		uintptr(unsafe.Pointer(&info[0])),
+	)
+	if ret == 0 {
+		return Info{}, xerrors.Errorf("failed to get VersionInfo from windows; %s", err)
+	}
+
+	vi := Info{data: info}
+	return vi, nil
+}
+
+// getLocales tries to get `Translation` property from VersionInfo data.
+func (f Info) getLocales() ([]Locale, error) {
+	data, err := f.verQueryValue(`\VarFileInfo\Translation`, false)
+	if err != nil || len(data) == 0 {
+		return nil, xerrors.Errorf("failed to get Translation property from windows object; %s", err)
+	}
+
+	if len(data)%int(unsafe.Sizeof(Locale{})) != 0 {
+		return nil, xerrors.New("get wrong locales len from windows object")
+	}
+	n := len(data) / int(unsafe.Sizeof(Locale{}))
+	if n == 0 {
+		return nil, xerrors.New("get empty locales array from windows object")
+	}
+	locales := (*[1 << 28]Locale)(unsafe.Pointer(&data[0]))[:n:n]
+	return locales, nil
 }

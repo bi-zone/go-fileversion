@@ -25,11 +25,11 @@ func main() {
 	fmt.Println("ProductName:", f.ProductName())
 	fmt.Println("ProductVersion:", f.ProductVersion())
 	fmt.Println("Comments:", f.Comments())
-	fmt.Println("FileVeLegalTrademarksrsion:", f.FileVeLegalTrademarksrsion())
+	fmt.Println("LegalTrademarks:", f.LegalTrademarks())
 	fmt.Println("PrivateBuild:", f.PrivateBuild())
 	fmt.Println("SpecialBuild:", f.SpecialBuild())
 
-	fixedInfo := f.GetFixedInfo()
+	fixedInfo := f.FixedInfo()
 	fmt.Printf("\n%+#v\n", fixedInfo)
 	fmt.Println("File version:", fixedInfo.FileVersion)
 	fmt.Println("Product version:", fixedInfo.ProductVersion)
