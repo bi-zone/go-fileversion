@@ -29,7 +29,10 @@ func main() {
 	fmt.Println("PrivateBuild:", f.PrivateBuild())
 	fmt.Println("SpecialBuild:", f.SpecialBuild())
 
-	fmt.Printf("\n%+#v\n", f.GetFixedInfo())
+	fixedInfo := f.GetFixedInfo()
+	fmt.Printf("\n%+#v\n", fixedInfo)
+	fmt.Println("File version:", fixedInfo.FileVersion)
+	fmt.Println("Product version:", fixedInfo.ProductVersion)
 
 	fmt.Printf("%+#v\n", f.Locales)
 
@@ -38,5 +41,4 @@ func main() {
 		CharsetID: fileversion.CSUnicode,
 	}
 	fmt.Println(f.GetPropertyWithLocale("PropertyName", germanLocale))
-
 }

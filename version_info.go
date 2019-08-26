@@ -5,15 +5,20 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/hashicorp/go-multierror"
 	"golang.org/x/xerrors"
 )
 
+// FileVersion consists info about version.
 type FileVersion struct {
 	Major uint16
 	Minor uint16
 	Patch uint16
 	Build uint16
+}
+
+// String returns a string representation of the version.
+func (f FileVersion) String() string {
+	return fmt.Sprintf("%d.%d.%d.%d", f.Major, f.Minor, f.Patch, f.Build)
 }
 
 // FixedFileInfo contains info from VS_FIXEDFILEINFO windows structure.
@@ -29,15 +34,20 @@ type FixedFileInfo struct {
 	FileDateLS     uint32
 }
 
+// LangID is a language id, should set considering
+// https://docs.microsoft.com/en-us/windows/win32/menurc/versioninfo-resource
 type LangID uint16
+
+// CharsetId is character-set identifier, should set considering
+// https://docs.microsoft.com/en-us/windows/win32/menurc/versioninfo-resource
 type CharsetID uint16
 
 // Locale defines a pair of a language ID and a charsetID.
 // It can be either one of default locales or any of locales
 // get from the file information using `.Locales()` method
 type Locale struct {
-	LangID
-	CharsetID
+	LangID    LangID
+	CharsetID CharsetID
 }
 
 // LangID and CharsetID constants.
@@ -265,13 +275,11 @@ var defaultLocales = []Locale{
 
 // GetProperty returns string-property.
 func (f Info) GetProperty(propertyName string) (string, error) {
-	var resErr error
 	if len(f.Locales) != 0 {
 		property, err := f.GetPropertyWithLocale(propertyName, f.Locales[0])
 		if err == nil {
 			return property, nil
 		}
-		resErr = multierror.Append(resErr, err)
 	}
 	// Some dlls might not contain correct codepage information. In this case we will fail during lookup.
 	// Explorer will take a few shots in dark by trying `defaultPageIDs`.
@@ -285,16 +293,15 @@ func (f Info) GetProperty(propertyName string) (string, error) {
 		if err == nil {
 			return property, nil
 		}
-		resErr = multierror.Append(resErr, err)
 	}
-	return "", resErr
+	return "", xerrors.Errorf("failed to get property %q", propertyName)
 }
 
 // GetProperty returns string-property with user-defined locale.
 func (f Info) GetPropertyWithLocale(propertyName string, locale Locale) (string, error) {
 	property, err := f.verQueryValueString(locale, propertyName)
 	if err != nil {
-		return "", xerrors.Errorf("failed to get property %q with locale %s", propertyName, locale)
+		return "", xerrors.Errorf("failed to get property %q with locale %#+v", propertyName, locale)
 	}
 	return property, nil
 }
