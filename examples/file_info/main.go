@@ -30,14 +30,15 @@ func main() {
 	fmt.Println("SpecialBuild:", f.SpecialBuild())
 
 	fixedInfo := f.FixedInfo()
-	fmt.Printf("\n%+#v\n", fixedInfo)
+	fmt.Printf("FixedInfo:\n%+v\n", fixedInfo)
 	fmt.Println("File version:", fixedInfo.FileVersion)
 	fmt.Println("Product version:", fixedInfo.ProductVersion)
 
-	fmt.Printf("%+#v\n", f.Locales)
+	fmt.Printf("Locales: %+v\n", f.Locales)
 
+	// https://docs.microsoft.com/en-us/windows/win32/menurc/versioninfo-resource
 	germanLocale := fileversion.Locale{
-		LangID:    0x0407,
+		LangID:    0x0407, // langID German
 		CharsetID: fileversion.CSUnicode,
 	}
 	fmt.Println(f.GetPropertyWithLocale("PropertyName", germanLocale))

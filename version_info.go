@@ -119,6 +119,19 @@ func New(path string) (Info, error) {
 	return info, nil
 }
 
+// NewWithLocale creates an Info instance with a given locale. All the string
+// properties translations will be firstly queried with the given locale.
+//
+// See GetPropertyWithLocale for exact properties querying.
+func NewWithLocale(path string, locale Locale) (Info, error) {
+	info, err := newWithoutLocale(path)
+	if err != nil {
+		return Info{}, xerrors.Errorf("failed to get VersionInfo; %s", err)
+	}
+	info.Locales = []Locale{locale}
+	return info, nil
+}
+
 // CompanyName returns CompanyName property.
 func (f Info) CompanyName() string {
 	p, _ := f.GetProperty("CompanyName")
@@ -267,9 +280,9 @@ func (f Info) GetProperty(propertyName string) (string, error) {
 	return "", xerrors.Errorf("failed to get property %q", propertyName)
 }
 
-// GetProperty returns string-property with user-defined locale. It's the only
-// way to get the property with the selected translation, all other methods
-// do heuristics in translation choosing.
+// GetPropertyWithLocale returns string-property with user-defined locale. It's
+// the only way to get the property with the selected translation, all other
+// methods do heuristics in translation choosing.
 //
 // See Locale, LangID and CharsetID docs for more info about locales.
 func (f Info) GetPropertyWithLocale(propertyName string, locale Locale) (string, error) {
