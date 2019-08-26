@@ -107,7 +107,7 @@ type Info struct {
 func New(path string) (Info, error) {
 	info, err := newWithoutLocale(path)
 	if err != nil {
-		return Info{}, xerrors.Errorf("failed to get VersionInfo; %s", err)
+		return Info{}, xerrors.Errorf("failed to get VersionInfo: %w", err)
 	}
 
 	if locales, err := info.getLocales(); err == nil {
@@ -126,7 +126,7 @@ func New(path string) (Info, error) {
 func NewWithLocale(path string, locale Locale) (Info, error) {
 	info, err := newWithoutLocale(path)
 	if err != nil {
-		return Info{}, xerrors.Errorf("failed to get VersionInfo; %s", err)
+		return Info{}, xerrors.Errorf("failed to get VersionInfo: %w", err)
 	}
 	info.Locales = []Locale{locale}
 	return info, nil
@@ -288,7 +288,7 @@ func (f Info) GetProperty(propertyName string) (string, error) {
 func (f Info) GetPropertyWithLocale(propertyName string, locale Locale) (string, error) {
 	property, err := f.verQueryValueString(locale, propertyName)
 	if err != nil {
-		return "", xerrors.Errorf("failed to get property %q with locale %#+v", propertyName, locale)
+		return "", xerrors.Errorf("failed to get property %q with locale %+v", propertyName, locale)
 	}
 	return property, nil
 }
@@ -346,7 +346,7 @@ func (f Info) verQueryValue(property string, isUTF16String bool) ([]byte, error)
 		end = start + int(length)
 	}
 	if start < 0 || end > len(f.data) {
-		return nil, xerrors.New("Index out of array")
+		return nil, xerrors.New("index out of range")
 	}
 	return f.data[start:end], nil
 }
@@ -354,14 +354,14 @@ func (f Info) verQueryValue(property string, isUTF16String bool) ([]byte, error)
 func newWithoutLocale(path string) (Info, error) {
 	pathPtr, err := syscall.UTF16PtrFromString(path)
 	if err != nil {
-		return Info{}, xerrors.Errorf("failed to convert image path to utf16; %s", err)
+		return Info{}, xerrors.Errorf("failed to convert image path to utf16: %w", err)
 	}
 	size, _, err := getFileVersionInfoSizeProc.Call(
 		uintptr(unsafe.Pointer(pathPtr)),
 		0,
 	)
 	if size == 0 {
-		return Info{}, xerrors.Errorf("failed to get memory size for VersionInfo slice; %s", err)
+		return Info{}, xerrors.Errorf("failed to get memory size for VersionInfo slice: %w", err)
 	}
 	info := make([]byte, size)
 	ret, _, err := getFileVersionInfoProc.Call(
@@ -371,7 +371,7 @@ func newWithoutLocale(path string) (Info, error) {
 		uintptr(unsafe.Pointer(&info[0])),
 	)
 	if ret == 0 {
-		return Info{}, xerrors.Errorf("failed to get VersionInfo from windows; %s", err)
+		return Info{}, xerrors.Errorf("failed to get VersionInfo from windows: %w", err)
 	}
 
 	vi := Info{data: info}
@@ -382,15 +382,15 @@ func newWithoutLocale(path string) (Info, error) {
 func (f Info) getLocales() ([]Locale, error) {
 	data, err := f.verQueryValue(`\VarFileInfo\Translation`, false)
 	if err != nil || len(data) == 0 {
-		return nil, xerrors.Errorf("failed to get Translation property from windows object; %s", err)
+		return nil, xerrors.Errorf("failed to get Translation property from a windows object: %w", err)
 	}
 
 	if len(data)%int(unsafe.Sizeof(Locale{})) != 0 {
-		return nil, xerrors.New("get wrong locales len from windows object")
+		return nil, xerrors.New("get wrong locales len in a windows object")
 	}
 	n := len(data) / int(unsafe.Sizeof(Locale{}))
 	if n == 0 {
-		return nil, xerrors.New("get empty locales array from windows object")
+		return nil, xerrors.New("get empty locales array in a windows object")
 	}
 	locales := (*[1 << 28]Locale)(unsafe.Pointer(&data[0]))[:n:n]
 	return locales, nil
