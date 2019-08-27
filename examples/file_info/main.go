@@ -10,7 +10,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		log.Fatal("Usage: ./file_info.exe <image-path>")
+		log.Fatalf("Usage: %s <image-path>", os.Args[0])
 	}
 	f, err := fileversion.New(os.Args[1])
 	if err != nil {
@@ -41,5 +41,5 @@ func main() {
 		LangID:    0x0407, // langID German
 		CharsetID: fileversion.CSUnicode,
 	}
-	fmt.Println(f.GetPropertyWithLocale("PropertyName", germanLocale))
+	fmt.Println(f.GetPropertyWithLocale("ProductName", germanLocale))
 }
