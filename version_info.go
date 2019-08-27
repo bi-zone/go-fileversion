@@ -1,3 +1,14 @@
+// Package fileversion provides wrapper for querying properties from windows
+// version-information resource.
+//
+// fileversion API is aimed to the easiest way of getting file properties so
+// it ignore most of errors querying properties. We suppose most of the time
+// it will be used as "create with New and just access properties". If you
+// need some guaranties - access the properties manually using GetProperty and
+// GetPropertyWithLocale.
+//
+// For more info about version-information resource look at
+// https://docs.microsoft.com/en-us/windows/win32/menurc/versioninfo-resource
 package fileversion
 
 import (
@@ -42,7 +53,7 @@ type FixedFileInfo struct {
 // https://docs.microsoft.com/en-us/windows/win32/menurc/versioninfo-resource
 type LangID uint16
 
-// CharsetId is character-set identifier. Could be one of the codes listed in
+// CharsetID is character-set identifier. Could be one of the codes listed in
 // `charsetID` section of
 // https://docs.microsoft.com/en-us/windows/win32/menurc/versioninfo-resource
 type CharsetID uint16

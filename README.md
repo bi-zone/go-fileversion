@@ -1,14 +1,15 @@
 ﻿# go-fileversion
 
 [![GoDoc](https://godoc.org/github.com/bi-zone/go-fileversion?status.svg)](https://godoc.org/github.com/bi-zone/go-fileversion/)
+[![Go Report Card](https://goreportcard.com/badge/github.com/bi-zone/wmi)](https://goreportcard.com/report/github.com/bi-zone/go-fileversion)
 
-Package `fileversion` provides wrapper for windows version-information resource.
+Package `fileversion` provides wrapper for querying properties from windows version-information resource.
 
 Using the package you can extract the following info:
 
-![](https://github.com/bi-zone/go-fileversion/assets/explorer_properties.png)
+![properties example](./assets/explorer_properties.png)
 
-
+If you are looking how to add this info to your go binary - look at [josephspurrier/goversioninfo](https://github.com/josephspurrier/goversioninfo).
 
 ## Examples
 
@@ -26,69 +27,60 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		log.Fatal("Usage: ./file_info.exe <image-path>")
+		log.Fatalf("Usage: %s <image-path>", os.Args[0])
 	}
 	f, err := fileversion.New(os.Args[1])
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("CompanyName:", f.CompanyName())
-	fmt.Println("FileDescription:", f.FileDescription())
-	fmt.Println("FileVersion:", f.FileVersion())
-	fmt.Println("InternalName:", f.InternalName())
-	fmt.Println("LegalCopyright:", f.LegalCopyright())
-	fmt.Println("OriginalFilename:", f.OriginalFilename())
 	fmt.Println("ProductName:", f.ProductName())
-	fmt.Println("ProductVersion:", f.ProductVersion())
-	fmt.Println("Comments:", f.Comments())
-	fmt.Println("FileVeLegalTrademarksrsion:", f.FileVeLegalTrademarksrsion())
-	fmt.Println("PrivateBuild:", f.PrivateBuild())
-	fmt.Println("SpecialBuild:", f.SpecialBuild())
-
-	fmt.Printf("\n%+#v\n", f.FixedInfo())
-
-	fmt.Printf("%+#v\n", f.Locales)
+	fmt.Println("LegalCopyright:", f.LegalCopyright())
+	fmt.Println("Version:", f.FixedInfo().FileVersion)
 }
 ```
 
-You can choose the locale for getting property.
+All string properties in file version-information resource by-design has multiple translations. 
+`go-fileversion` allows you to query that translations in a 2 ways. 
 
-Choose locale from object:
+You can create an `Info` object with "preferred" locale:
 
 ```golang
-f, err := fileversion.New(os.Args[1])
+germanLocale := fileversion.Locale{
+    LangID: 0x0407, // langID German
+    CharsetID: fileversion.CSUnicode,
+}
+f, err := fileversion.NewWithLocale(os.Args[1], germanLocale)
 if err != nil {
     log.Fatal(err)
 }
-if len(f.Locales) > 1 {
-    fmt.Println(f.GetPropertyWithLocale("PropertyName", f.Locales[len(f.Locales) - 1]))
-}
+fmt.Println("ProductName:", f.ProductName())
 ```
 
-Also you can get property with owen-defined locale:
+Here "German-Unicode" locale will be used to query string properties (like `ProductName`), 
+**but if the german translation will be missing - `go-fileversion` would try to fetch a 
+property with default translation**. (The idea of locales handling was copied from 
+[.NET Framework 4.8](https://referencesource.microsoft.com/#System/services/monitoring/system/diagnosticts/FileVersionInfo.cs,036c54a4aa10d39f,references))
+
+The only way to get necessary translation without any heuristics is to use `GetPropertyWithLocale` manualy:
 ```golang
 f, err := fileversion.New(os.Args[1])
 if err != nil {
     log.Fatal(err)
 }
 germanLocale := fileversion.Locale{
-		LangID: 0x0407,
-		CharsetID: fileversion.CSUnicode,
-	}
-fmt.Println(f.GetPropertyWithLocale("PropertyName", germanLocale))
-```
-But we don't recommend to do this :) If object doesn't have locale, 
-you will get an error.
-
- `f.GetProperty` method tries to get property with different locales given 
- windows features.
-The idea of locales handling was copied from 
-[.NET Framework 4.8](https://referencesource.microsoft.com/#System/services/monitoring/system/diagnosticts/FileVersionInfo.cs,036c54a4aa10d39f,references)
-
-```golang
-f, err := fileversion.New(os.Args[1])
-if err != nil {
-    log.Fatal(err)
+    LangID: 0x0407, // langID German
+    CharsetID: fileversion.CSUnicode,
 }
-f.GetProperty("PropertyName")
+fmt.Println(f.GetPropertyWithLocale("ProductName", germanLocale))
 ```
+
+## Versioning
+
+Project uses [semantic versioning](http://semver.org) for version numbers, which
+is similar to the version contract of the Go language. Which means that the major
+version will always maintain backwards compatibility with minor versions. Minor 
+versions will only add new additions and changes. Fixes will always be in patch. 
+
+This contract should allow you to upgrade to new minor and patch versions without
+breakage or modifications to your existing code. Leave a ticket, if there is breakage,
+so that it could be fixed.
