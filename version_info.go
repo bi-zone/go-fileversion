@@ -29,7 +29,7 @@ type FileVersion struct {
 
 // String returns a string representation of the version.
 func (f FileVersion) String() string {
-	return fmt.Sprintf("%d.%d.%d.%d", f.Major, f.Minor, f.Patch, f.Build)
+	return fmt.Sprintf("%d.%d.%d.%d", f.Major, f.Minor, f.Build, f.Patch)
 }
 
 // FixedFileInfo contains a "fixed" part of a file information (without any strings).
